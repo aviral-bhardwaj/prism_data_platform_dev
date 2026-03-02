@@ -1,0 +1,108 @@
+# The main job for data_plat_demo.
+resources:
+  jobs:
+    Data_Platform_Main_Job:
+      name: Data_Platform_Main_Job
+      tasks:
+        - task_key: config_to_table
+          notebook_task:
+            notebook_path: ../src/bronze_layer_scripts/001_import_config_to_table.py
+            source: WORKSPACE
+          job_cluster_key: job_cluster
+          # existing_cluster_id: 0820-164914-ytaa5wz3
+        - task_key: config_table_to_parameters
+          depends_on:
+            - task_key: config_to_table
+          notebook_task:
+            notebook_path: ../src/bronze_layer_scripts/002_process_config_table_to_parameters.py
+            source: WORKSPACE
+          job_cluster_key: job_cluster
+          # existing_cluster_id: 0820-164914-ytaa5wz3
+        - task_key: dcp_source_to_landing_surveys_endpoint
+          depends_on:
+            - task_key: config_table_to_parameters
+          notebook_task:
+            notebook_path: ../src/bronze_layer_scripts/dcp_001_source_to_landing_surveys_endpoint.py
+            source: WORKSPACE
+          job_cluster_key: job_cluster
+          # existing_cluster_id: 0820-164914-ytaa5wz3
+        - task_key: for_each_config
+          depends_on:
+            - task_key: dcp_source_to_landing_surveys_endpoint
+            - task_key: config_table_to_parameters
+          for_each_task:
+            inputs: "{{tasks.config_table_to_parameters.values.survey_config}}"
+            task:
+              task_key: run_source_to_landing
+              run_job_task:
+                job_id: ${resources.jobs.Data_Platform_Bronze_Source_Ingestion_per_Survey.id}
+                job_parameters:
+                  config_input: "{{input}}"
+        - task_key: dcp_landing_to_delta
+          depends_on:
+            - task_key: for_each_config
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.data_plat_bronze_landing_to_delta.id}
+            full_refresh: false
+      job_clusters:
+        - job_cluster_key: job_cluster
+          new_cluster:
+            spark_version: 15.4.x-scala2.12
+            node_type_id: Standard_DS4_v2
+            data_security_mode: SINGLE_USER
+            autoscale:
+              min_workers: 1
+              max_workers: 4
+      queue:
+        enabled: true
+      performance_target: STANDARD
+
+# resources:
+#   jobs:
+#     data_plat_demo_job:
+#       name: data_plat_demo_job
+
+#       trigger:
+#         # Run this job every day, exactly one day from the last run; see https://docs.databricks.com/api/workspace/jobs/create#trigger
+#         periodic:
+#           interval: 1
+#           unit: DAYS
+
+#       #email_notifications:
+#       #  on_failure:
+#       #    - your_email@example.com
+
+#       tasks:
+#         - task_key: notebook_task
+#           job_cluster_key: job_cluster
+#           notebook_task:
+#             notebook_path: ../src/notebook.ipynb
+
+#         - task_key: refresh_pipeline
+#           depends_on:
+#             - task_key: notebook_task
+#           pipeline_task:
+#             pipeline_id: ${resources.pipelines.data_plat_demo_pipeline.id}
+
+#         - task_key: main_task
+#           depends_on:
+#             - task_key: refresh_pipeline
+#           job_cluster_key: job_cluster
+#           python_wheel_task:
+#             package_name: data_plat_demo
+#             entry_point: main
+#           libraries:
+#             # By default we just include the .whl file generated for the data_plat_demo package.
+#             # See https://docs.databricks.com/dev-tools/bundles/library-dependencies.html
+#             # for more information on how to add other libraries.
+#             - whl: ../dist/*.whl
+
+#       job_clusters:
+#         - job_cluster_key: job_cluster
+#           new_cluster:
+#             spark_version: 15.4.x-scala2.12
+#             node_type_id: Standard_D3_v2
+#             data_security_mode: SINGLE_USER
+#             autoscale:
+#               min_workers: 1
+#               max_workers: 4

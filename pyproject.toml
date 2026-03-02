@@ -1,0 +1,60 @@
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+# Exclude Databricks notebook source files and generated code
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | build
+  | dist
+  | .*\.egg-info
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_third_party = ["pyspark", "delta", "msal", "requests", "chardet"]
+known_first_party = ["utils", "data_platform"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# Rules enabled: pyflakes (F), pycodestyle (E/W), isort (I)
+select = ["E", "F", "W", "I"]
+ignore = [
+    # PySpark overloads == so E711/E712 produce false positives in filter() calls
+    "E711",
+    "E712",
+    # Databricks notebook-source files use module-level code before imports
+    "E402",
+    # Ambiguous variable name — too strict for data pipelines
+    "E741",
+    # Undefined name — Databricks injects spark/dbutils at runtime
+    "F821",
+    # Unused imports — managed per-file for Databricks notebooks
+    "F401",
+    # Star imports — used in Databricks notebook-style files
+    "F403",
+    "F405",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401", "F403"]
+"data_platform/src/**/*.py" = ["F401", "F403", "F405", "F811", "F841", "E302", "E305"]
+"utils/survey_metadata_management.py" = ["E402", "F401"]
+"utils/qc_bridge_nps_table.py" = ["F401", "E302", "E402"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+# Databricks runtime provides spark/dbutils — skip strict checking for notebook files
+exclude = [
+    "data_platform/src/",
+    "utils/survey_metadata_management.py",
+    "utils/qc_bridge_nps_table.py",
+]

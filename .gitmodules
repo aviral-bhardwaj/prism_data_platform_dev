@@ -1,0 +1,3 @@
+[submodule "data_platform/src/gold_layer"]
+	path = data_platform/src/gold_layer
+	url = https://github.com/Bain/Prism_DP_Gold.git

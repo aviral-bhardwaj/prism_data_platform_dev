@@ -1,0 +1,25 @@
+# The main pipeline for data_plat_demo
+resources:
+  pipelines:
+    data_plat_bronze_landing_to_delta:
+      name: data_plat_bronze_landing_to_delta
+      clusters:
+        - label: default
+          autoscale:
+            min_workers: 1
+            max_workers: 5
+            mode: ENHANCED
+      libraries:
+        - notebook:
+            path: ../src/bronze_layer_scripts/dcp_006_dlt_landing_to_delta_surveys.py
+        - notebook:
+            path: ../src/bronze_layer_scripts/dcp_007_dlt_landing_to_delta_survey_datamaps.py
+        - notebook:
+            path: ../src/bronze_layer_scripts/dcp_008_dlt_landing_to_delta_files.py
+        - notebook:
+            path: ../src/bronze_layer_scripts/dcp_009_dlt_landing_to_delta_survey_layouts.py
+        - notebook:
+            path: ../src/bronze_layer_scripts/dcp_010_dlt_landing_to_delta_survey_answers.py
+      schema: decipher
+      development: false
+      catalog: prism_bronze

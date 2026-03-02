@@ -1,0 +1,68 @@
+{
+  "catalog": "prism_bronze",
+  "schema": "decipher",
+  "file_log_table": "prism_bronze.data_plat_control.file_processing_log",
+  "reprocess_failed": true,
+  "file_configs": {
+    "answers_mapping": {
+      "source_path": "/Volumes/prism_bronze/landing_volumes/landing_files/sources/decipher/survey_files_endpoint_csv/",
+      "file_pattern": "survey_file_Answers_mapping*.csv",
+      "file_format": "csv",
+      "table_name": "answers_mapping",
+      "keys": ["id_survey_question", "num_answer", "survey_id", "layout_id"],
+      "comment": "Manual input for Answers Mapping in each survey.",
+      "id_extraction": "csv"
+    },
+    "questions_mapping": {
+      "source_path": "/Volumes/prism_bronze/landing_volumes/landing_files/sources/decipher/survey_files_endpoint_csv/",
+      "file_pattern": "survey_file_Questions_mapping*.csv",
+      "file_format": "csv",
+      "table_name": "questions_mapping",
+      "keys": ["id_survey_question", "survey_id", "layout_id"],
+      "comment": "Manual input for Questions Mapping in each survey.",
+      "id_extraction": "csv"
+    },
+    "variable_mapping": {
+      "source_path": "/Volumes/prism_bronze/landing_volumes/landing_files/sources/decipher/survey_files_endpoint_csv/",
+      "file_pattern": "survey_file_Variable_mapping*.csv",
+      "file_format": "csv",
+      "table_name": "variable_mapping",
+      "keys": ["id_question", "survey_id", "layout_id"],
+      "comment": "Manual input for Variable Mapping in each survey.",
+      "id_extraction": "csv"
+    },
+    "all_surveys": {
+      "source_path": "/Volumes/prism_bronze/landing_volumes/landing_files/sources/decipher/all_surveys_endpoint/",
+      "file_pattern": "*.json",
+      "file_format": "json",
+      "table_name": "all_surveys",
+      "keys": ["path"],
+      "comment": "Metadata for each survey. One row per survey",
+      "id_extraction": "none",
+      "json_multiline": true,
+      "json_transform": null
+    },
+    "survey_metadata": {
+      "source_path": "/Volumes/prism_bronze/landing_volumes/landing_files/sources/decipher/survey_metadata_endpoint/",
+      "file_pattern": "*.json",
+      "file_format": "json",
+      "table_name": "survey_metadata",
+      "keys": ["label", "survey_id", "layout_id"],
+      "comment": "Question metadata in each survey. One row per question/survey",
+      "id_extraction": "metadata",
+      "json_multiline": true,
+      "json_transform": "explode_variables"
+    },
+    "survey_layouts": {
+      "source_path": "/Volumes/prism_bronze/landing_volumes/landing_files/sources/decipher/survey_layouts_endpoint/",
+      "file_pattern": "*.json",
+      "file_format": "json",
+      "table_name": "survey_layouts",
+      "keys": ["id", "survey_id"],
+      "comment": "Layout metadata in each survey. One row per layout/survey",
+      "id_extraction": "layout",
+      "json_multiline": true,
+      "json_transform": null
+    }
+  }
+}
