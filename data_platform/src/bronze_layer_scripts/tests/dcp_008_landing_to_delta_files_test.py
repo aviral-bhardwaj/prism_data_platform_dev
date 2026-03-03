@@ -100,18 +100,19 @@ def eq_null_safe_join(
 # Getting latest file
 list_of_latest_files = []
 
-for file_name in final_list:
-    
-    if 'metadata' in file_name:
-        latest_file = max([base_path+survey_metadata+item for item in os.listdir(base_path+survey_metadata) if file_name in item.lower()])
-    elif 'layouts' in file_name:
-        latest_file = max([base_path+survey_layouts+item for item in os.listdir(base_path+survey_layouts) if '_'.join(file_name.split('_'))[:-6] in item.lower()])
-    elif 'all_surveys' in file_name:
-        latest_file = max([base_path+all_surveys+item for item in os.listdir(base_path+all_surveys) if '_'.join(file_name.split('_'))[:-13] in item.lower()])
-    else:
-        latest_file = max([base_path+files+item for item in os.listdir(base_path+files) if file_name in item.lower()])
+if os.path.exists(base_path):
+    for file_name in final_list:
+        
+        if 'metadata' in file_name:
+            latest_file = max([base_path+survey_metadata+item for item in os.listdir(base_path+survey_metadata) if file_name in item.lower()])
+        elif 'layouts' in file_name:
+            latest_file = max([base_path+survey_layouts+item for item in os.listdir(base_path+survey_layouts) if '_'.join(file_name.split('_'))[:-6] in item.lower()])
+        elif 'all_surveys' in file_name:
+            latest_file = max([base_path+all_surveys+item for item in os.listdir(base_path+all_surveys) if '_'.join(file_name.split('_'))[:-13] in item.lower()])
+        else:
+            latest_file = max([base_path+files+item for item in os.listdir(base_path+files) if file_name in item.lower()])
 
-    list_of_latest_files.append(latest_file)
+        list_of_latest_files.append(latest_file)
 
 list_of_latest_files = sorted(list(set(list_of_latest_files)))
 list_of_latest_files

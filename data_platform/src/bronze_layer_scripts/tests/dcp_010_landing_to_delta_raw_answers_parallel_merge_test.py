@@ -22,7 +22,10 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType, LongType, IntegerType
 from datetime import datetime
 from pathlib import Path
-from delta.tables import DeltaTable
+try:
+    from delta.tables import DeltaTable
+except ImportError:
+    DeltaTable = None  # delta-spark not installed; only used inside Databricks-guarded blocks
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import time
@@ -85,12 +88,15 @@ def create_test_file_log_table():
     empty_df.write.format("delta").mode("overwrite").saveAsTable(TEST_FILE_LOG_TABLE)
     print(f"✓ Created test file log table: {TEST_FILE_LOG_TABLE}")
 
-create_test_file_log_table()
+_DATABRICKS_ENV = "databricks" in spark.conf.get("spark.master", "")
 
-# Verify
-test_log = spark.table(TEST_FILE_LOG_TABLE)
-print(f"✓ Table exists with {test_log.count()} rows")
-test_log.printSchema()
+if _DATABRICKS_ENV:
+    create_test_file_log_table()
+
+    # Verify
+    test_log = spark.table(TEST_FILE_LOG_TABLE)
+    print(f"✓ Table exists with {test_log.count()} rows")
+    test_log.printSchema()
 
 # COMMAND ----------
 
@@ -453,110 +459,110 @@ files = get_json_files_test(test_base_path, test_survey_id, test_layout_id)
 
 print(f"\nProcessing [{test_survey_id}_{test_layout_id}] files sequentially...")
 
-for file_info in sorted(files, key=lambda x: x['name']):
-    file_path = file_info['path']
-    
-    # Log start
-    log_file_processing_start_test(file_info, test_survey_id, test_layout_id)
-    
-    try:
-        # Process file
-        resp_count, rec_inserted = process_test_file_with_scd2(
-            file_path, test_survey_id, test_layout_id
-        )
+if _DATABRICKS_ENV:
+    for file_info in sorted(files, key=lambda x: x['name']):
+        file_path = file_info['path']
         
-        # Log success
-        log_file_processing_complete_test(
-            file_path, 'SUCCESS', resp_count, rec_inserted
-        )
-    except Exception as e:
-        # Log failure
-        log_file_processing_complete_test(
-            file_path, 'FAILED', error_message=str(e)[:500]
-        )
-        print(f"[{test_survey_id}_{test_layout_id}] ✗ Failed: {e}")
-        raise
+        # Log start
+        log_file_processing_start_test(file_info, test_survey_id, test_layout_id)
+        
+        try:
+            # Process file
+            resp_count, rec_inserted = process_test_file_with_scd2(
+                file_path, test_survey_id, test_layout_id
+            )
+            
+            # Log success
+            log_file_processing_complete_test(
+                file_path, 'SUCCESS', resp_count, rec_inserted
+            )
+        except Exception as e:
+            # Log failure
+            log_file_processing_complete_test(
+                file_path, 'FAILED', error_message=str(e)[:500]
+            )
+            print(f"[{test_survey_id}_{test_layout_id}] ✗ Failed: {e}")
+            raise
 
 print(f"\n✓ Sequential processing complete for [{test_survey_id}_{test_layout_id}]")
 
 # COMMAND ----------
 
-# Verify the results for first survey
-table_name = f"prism_bronze.decipher_raw_answers_long_format.test_survey_{test_survey_id}_{test_layout_id}"
-result_df = spark.table(table_name)
+if _DATABRICKS_ENV:
+    # Verify the results for first survey
+    table_name = f"prism_bronze.decipher_raw_answers_long_format.test_survey_{test_survey_id}_{test_layout_id}"
+    result_df = spark.table(table_name)
 
-print(f"\nResults for [{test_survey_id}_{test_layout_id}]:")
-print("="*80)
+    print(f"\nResults for [{test_survey_id}_{test_layout_id}]:")
+    print("="*80)
 
-# Overall statistics
-total_records = result_df.count()
-active_records = result_df.filter(F.col("__END_AT").isNull()).count()
-historical_records = total_records - active_records
+    # Overall statistics
+    total_records = result_df.count()
+    active_records = result_df.filter(F.col("__END_AT").isNull()).count()
+    historical_records = total_records - active_records
 
-print(f"Total records: {total_records}")
-print(f"Active records: {active_records}")
-print(f"Historical records: {historical_records}")
+    print(f"Total records: {total_records}")
+    print(f"Active records: {active_records}")
+    print(f"Historical records: {historical_records}")
 
-# Show all records ordered by uuid and question
-print("\nAll records (including history):")
-display(
-    result_df.select(
-        "uuid", "id_survey_question", "value", "__START_AT", "__END_AT",
-        F.when(F.col("__END_AT").isNull(), "ACTIVE").otherwise("HISTORICAL").alias("status")
-    ).orderBy("uuid", "id_survey_question", "__START_AT")
-)
+    # Show all records ordered by uuid and question
+    print("\nAll records (including history):")
+    display(
+        result_df.select(
+            "uuid", "id_survey_question", "value", "__START_AT", "__END_AT",
+            F.when(F.col("__END_AT").isNull(), "ACTIVE").otherwise("HISTORICAL").alias("status")
+        ).orderBy("uuid", "id_survey_question", "__START_AT")
+    )
 
-# COMMAND ----------
+    # Test CDC scenarios
+    print("\n" + "="*80)
+    print("CDC Scenario Verification")
+    print("="*80)
 
-# Test CDC scenarios
-print("\n" + "="*80)
-print("CDC Scenario Verification")
-print("="*80)
+    # Scenario 1: Changed value (uuid_001, q1: 5 -> 4)
+    print("\n1. Changed Value Test (uuid_001, q1):")
+    print("   Expected: 2 records (1 historical '5', 1 active '4')")
+    changed_df = result_df.filter(
+        (F.col("uuid") == f"uuid_{test_survey_id}_001") &
+        (F.col("id_survey_question") == "q1")
+    ).orderBy("__START_AT")
+    print(f"   Found: {changed_df.count()} records")
+    display(changed_df.select("uuid", "id_survey_question", "value",
+        F.when(F.col("__END_AT").isNull(), "ACTIVE").otherwise("HISTORICAL").alias("status")))
 
-# Scenario 1: Changed value (uuid_001, q1: 5 -> 4)
-print("\n1. Changed Value Test (uuid_001, q1):")
-print("   Expected: 2 records (1 historical '5', 1 active '4')")
-changed_df = result_df.filter(
-    (F.col("uuid") == f"uuid_{test_survey_id}_001") &
-    (F.col("id_survey_question") == "q1")
-).orderBy("__START_AT")
-print(f"   Found: {changed_df.count()} records")
-display(changed_df.select("uuid", "id_survey_question", "value", 
-    F.when(F.col("__END_AT").isNull(), "ACTIVE").otherwise("HISTORICAL").alias("status")))
+    # Scenario 2: Deleted question (uuid_003, q3 deleted in file 2)
+    print("\n2. Deleted Question Test (uuid_003, q3):")
+    print("   Expected: 1 historical record (closed after file 2)")
+    deleted_q_df = result_df.filter(
+        (F.col("uuid") == f"uuid_{test_survey_id}_003") &
+        (F.col("id_survey_question") == "q3")
+    )
+    print(f"   Found: {deleted_q_df.count()} records")
+    if deleted_q_df.count() > 0:
+        status = "CLOSED" if deleted_q_df.filter(F.col("__END_AT").isNotNull()).count() > 0 else "STILL ACTIVE"
+        print(f"   Status: {status}")
+    display(deleted_q_df.select("uuid", "id_survey_question", "value",
+        F.when(F.col("__END_AT").isNull(), "ACTIVE").otherwise("HISTORICAL").alias("status")))
 
-# Scenario 2: Deleted question (uuid_003, q3 deleted in file 2)
-print("\n2. Deleted Question Test (uuid_003, q3):")
-print("   Expected: 1 historical record (closed after file 2)")
-deleted_q_df = result_df.filter(
-    (F.col("uuid") == f"uuid_{test_survey_id}_003") &
-    (F.col("id_survey_question") == "q3")
-)
-print(f"   Found: {deleted_q_df.count()} records")
-if deleted_q_df.count() > 0:
-    status = "CLOSED" if deleted_q_df.filter(F.col("__END_AT").isNotNull()).count() > 0 else "STILL ACTIVE"
-    print(f"   Status: {status}")
-display(deleted_q_df.select("uuid", "id_survey_question", "value",
-    F.when(F.col("__END_AT").isNull(), "ACTIVE").otherwise("HISTORICAL").alias("status")))
+    # Scenario 3: Deleted UUID (uuid_002 removed in file 3)
+    print("\n3. Deleted UUID Test (uuid_002 - all questions):")
+    print("   Expected: All questions closed (historical)")
+    deleted_uuid_df = result_df.filter(F.col("uuid") == f"uuid_{test_survey_id}_002")
+    print(f"   Found: {deleted_uuid_df.count()} records")
+    active_count = deleted_uuid_df.filter(F.col("__END_AT").isNull()).count()
+    print(f"   Active: {active_count} (should be 0)")
+    print(f"   Historical: {deleted_uuid_df.count() - active_count} (should be all)")
+    display(deleted_uuid_df.select("uuid", "id_survey_question", "value",
+        F.when(F.col("__END_AT").isNull(), "ACTIVE").otherwise("HISTORICAL").alias("status")).orderBy("id_survey_question"))
 
-# Scenario 3: Deleted UUID (uuid_002 removed in file 3)
-print("\n3. Deleted UUID Test (uuid_002 - all questions):")
-print("   Expected: All questions closed (historical)")
-deleted_uuid_df = result_df.filter(F.col("uuid") == f"uuid_{test_survey_id}_002")
-print(f"   Found: {deleted_uuid_df.count()} records")
-active_count = deleted_uuid_df.filter(F.col("__END_AT").isNull()).count()
-print(f"   Active: {active_count} (should be 0)")
-print(f"   Historical: {deleted_uuid_df.count() - active_count} (should be all)")
-display(deleted_uuid_df.select("uuid", "id_survey_question", "value",
-    F.when(F.col("__END_AT").isNull(), "ACTIVE").otherwise("HISTORICAL").alias("status")).orderBy("id_survey_question"))
-
-# Scenario 4: New UUID (uuid_004 added in file 2)
-print("\n4. New UUID Test (uuid_004):")
-print("   Expected: Active records, no history")
-new_uuid_df = result_df.filter(F.col("uuid") == f"uuid_{test_survey_id}_004")
-print(f"   Found: {new_uuid_df.count()} records")
-print(f"   All active: {new_uuid_df.filter(F.col('__END_AT').isNull()).count() == new_uuid_df.count()}")
-display(new_uuid_df.select("uuid", "id_survey_question", "value",
-    F.when(F.col("__END_AT").isNull(), "ACTIVE").otherwise("HISTORICAL").alias("status")))
+    # Scenario 4: New UUID (uuid_004 added in file 2)
+    print("\n4. New UUID Test (uuid_004):")
+    print("   Expected: Active records, no history")
+    new_uuid_df = result_df.filter(F.col("uuid") == f"uuid_{test_survey_id}_004")
+    print(f"   Found: {new_uuid_df.count()} records")
+    print(f"   All active: {new_uuid_df.filter(F.col('__END_AT').isNull()).count() == new_uuid_df.count()}")
+    display(new_uuid_df.select("uuid", "id_survey_question", "value",
+        F.when(F.col("__END_AT").isNull(), "ACTIVE").otherwise("HISTORICAL").alias("status")))
 
 # COMMAND ----------
 
@@ -671,26 +677,27 @@ print("="*80)
 print("File Processing Log Verification")
 print("="*80)
 
-log_df = spark.table(TEST_FILE_LOG_TABLE)
+if _DATABRICKS_ENV:
+    log_df = spark.table(TEST_FILE_LOG_TABLE)
 
-# Overall stats
-total_logged = log_df.count()
-successful = log_df.filter(F.col("status") == "SUCCESS").count()
-failed = log_df.filter(F.col("status") == "FAILED").count()
+    # Overall stats
+    total_logged = log_df.count()
+    successful = log_df.filter(F.col("status") == "SUCCESS").count()
+    failed = log_df.filter(F.col("status") == "FAILED").count()
 
-print(f"\nTotal files logged: {total_logged}")
-print(f"Successful: {successful}")
-print(f"Failed: {failed}")
+    print(f"\nTotal files logged: {total_logged}")
+    print(f"Successful: {successful}")
+    print(f"Failed: {failed}")
 
-# Show all log entries
-print("\nAll log entries:")
-display(
-    log_df.select(
-        "survey_id", "layout_id", "file_name", "status",
-        "respondent_count", "records_inserted",
-        "processing_start_time", "processing_end_time"
-    ).orderBy("survey_id", "layout_id", "file_name")
-)
+    # Show all log entries
+    print("\nAll log entries:")
+    display(
+        log_df.select(
+            "survey_id", "layout_id", "file_name", "status",
+            "respondent_count", "records_inserted",
+            "processing_start_time", "processing_end_time"
+        ).orderBy("survey_id", "layout_id", "file_name")
+    )
 
 # COMMAND ----------
 
@@ -917,14 +924,15 @@ print("\n✓ Test 10 completed")
 print("Cleaning up test resources...")
 
 # Drop file log table
-spark.sql(f"DROP TABLE IF EXISTS {TEST_FILE_LOG_TABLE}")
-print(f"✓ Dropped table: {TEST_FILE_LOG_TABLE}")
+if _DATABRICKS_ENV:
+    spark.sql(f"DROP TABLE IF EXISTS {TEST_FILE_LOG_TABLE}")
+    print(f"✓ Dropped table: {TEST_FILE_LOG_TABLE}")
 
-# Drop all test data tables
-for survey_id, layout_id in TEST_SURVEYS:
-    table_name = f"prism_bronze.decipher_raw_answers_long_format.test_survey_{survey_id}_{layout_id}"
-    spark.sql(f"DROP TABLE IF EXISTS {table_name}")
-    print(f"✓ Dropped table: {table_name}")
+    # Drop all test data tables
+    for survey_id, layout_id in TEST_SURVEYS:
+        table_name = f"prism_bronze.decipher_raw_answers_long_format.test_survey_{survey_id}_{layout_id}"
+        spark.sql(f"DROP TABLE IF EXISTS {table_name}")
+        print(f"✓ Dropped table: {table_name}")
 
 # Remove test files
 try:
